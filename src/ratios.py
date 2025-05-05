@@ -1,7 +1,12 @@
+"""
+Compute financial ratios using Yahoo Finance and Okama.
+"""
+import time
 import logging
 import pandas as pd
 import yfinance as yf
 import okama as ok
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Policy variable: change this to use a different baseline year.
 DEFAULT_YEAR = "2023"
@@ -157,6 +162,38 @@ def compute_ratios(ticker_symbol):
     except Exception as e:
         logger.error(f"Error computing ratios for {ticker_symbol}: {e}")
     return results
+
+def process_tickers(stocks):
+    def process_ticker(row):
+        ticker_symbol = row['Ticker']
+        start_time = time.time()
+        try:
+            ratios = compute_ratios(ticker_symbol)
+            elapsed = time.time() - start_time
+            ratios['ticker'] = ticker_symbol
+            ratios['elapsed'] = elapsed
+            print(f"Processing {ticker_symbol}... Success in {elapsed:.2f} sec")
+            return ratios, None
+        except Exception as e:
+            elapsed = time.time() - start_time
+            print(f"Processing {ticker_symbol}... Failed in {elapsed:.2f} sec: {e}")
+            return None, ticker_symbol
+    
+    results = []
+    error_tickers = []
+
+    with ThreadPoolExecutor(max_workers=10) as executor:
+        futures = {executor.submit(process_ticker, row): row['Ticker'] for idx, row in stocks.iterrows()}
+        for future in as_completed(futures):
+            res, error = future.result()
+            if res is not None:
+                results.append(res)
+            if error:
+                error_tickers.append(error)
+    
+    return results, error_tickers
+
+
 
 if __name__ == "__main__":
     import sys

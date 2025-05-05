@@ -1,9 +1,63 @@
 #!/usr/bin/env python3
 import pandas as pd
 import numpy as np
+import okama as ok
 from scipy.stats import zscore
 from sklearn.preprocessing import RobustScaler
 from sklearn.decomposition import PCA
+
+# Define the universe of 50 tickers split among 11 sectors.
+# For 6 sectors, we'll include 5 tickers each, and for the remaining 5 sectors, 4 tickers each.
+stocks = {
+    'Ticker': [
+        # Technology (5)
+        'AAPL', 'MSFT', 'NVDA', 'INTC', 'IBM',
+        # Healthcare (5)
+        'JNJ', 'PFE', 'MRNA', 'UNH', 'ABBV',
+        # Financials (5)
+        'JPM', 'BAC', 'GS', 'WFC', 'C',
+        # Consumer Discretionary (5)
+        'HD', 'MCD', 'TSLA', 'AMZN', 'NKE',
+        # Consumer Staples (5)
+        'PG', 'KO', 'WMT', 'COST', 'PEP',
+        # Energy (5)
+        'XOM', 'CVX', 'SLB', 'EOG', 'OXY',
+        # Industrials (4)
+        'CAT', 'BA', 'DE', 'HON',
+        # Utilities (4)
+        'DUK', 'SO', 'AEP', 'EXC',
+        # Materials (4)
+        'DOW', 'FCX', 'LIN', 'NEM',
+        # Communication Services (4)
+        'DIS', 'NFLX', 'T', 'VZ',
+        # Real Estate (4)
+        'O', 'PLD', 'SPG', 'AMT'
+    ],
+    'Sector': [
+        # Technology
+        'Technology', 'Technology', 'Technology', 'Technology', 'Technology',
+        # Healthcare
+        'Healthcare', 'Healthcare', 'Healthcare', 'Healthcare', 'Healthcare',
+        # Financials
+        'Financials', 'Financials', 'Financials', 'Financials', 'Financials',
+        # Consumer Discretionary
+        'Consumer Discretionary', 'Consumer Discretionary', 'Consumer Discretionary', 'Consumer Discretionary', 'Consumer Discretionary',
+        # Consumer Staples
+        'Consumer Staples', 'Consumer Staples', 'Consumer Staples', 'Consumer Staples', 'Consumer Staples',
+        # Energy
+        'Energy', 'Energy', 'Energy', 'Energy', 'Energy',
+        # Industrials (4)
+        'Industrials', 'Industrials', 'Industrials', 'Industrials',
+        # Utilities (4)
+        'Utilities', 'Utilities', 'Utilities', 'Utilities',
+        # Materials (4)
+        'Materials', 'Materials', 'Materials', 'Materials',
+        # Communication Services (4)
+        'Communication Services', 'Communication Services', 'Communication Services', 'Communication Services',
+        # Real Estate (4)
+        'Real Estate', 'Real Estate', 'Real Estate', 'Real Estate'
+    ]
+}
 
 # ---------------------------
 # Function: Data Encoding & Cleanup
@@ -14,6 +68,30 @@ def setup_data(df_results):
     df_encoded[numeric_cols] = df_encoded[numeric_cols].fillna(df_encoded[numeric_cols].mean())
     print(f"df_encoded ready: shape {df_encoded.shape}")
     return df_encoded
+
+def compute_risk(df_results):
+    all_assets = ok.AssetList([ticker + ".US" for ticker in df_results["ticker"]])
+    
+    pf = ok.Portfolio(
+        assets=all_assets,
+        weights=[1 / len(all_assets)] * len(all_assets),    
+        ccy='USD',
+        rebalancing_period='month',  # 'Q' for quarterly, 'A' for annual, etc.
+        first_date='2004-01',    # pick a reasonable start date (earliest is 2003-09 from initial assessment)
+        last_date='2024-02'       # pick an end date to evaluate
+    )
+    
+    # Calculate the rolling annual risk for each asset
+    rolling_risks = all_assets.get_rolling_risk_annual()
+
+    risks = {}
+
+    # Calculate the average rolling risk for each asset
+    for asset in all_assets:
+        risks[asset.ticker] = rolling_risks[asset.ticker + ".US"][0]
+
+    # Map the calculated risks to the "ticker" column in df_results
+    df_results["risk"] = df_results["ticker"].map(risks)
 
 # ---------------------------
 # Function: Compute Composite Metrics
@@ -85,7 +163,7 @@ def compute_clusters(df, projectedData, n_clusters=5, random_state=0, method="km
             from scipy.cluster.hierarchy import dendrogram, linkage, fcluster
             Z = linkage(projectedData, method='ward')
             # Compute threshold to color the dendrogram for exactly n_clusters segments
-            cluster_threshold = Z[-(n_clusters), 2] if n_clusters > 1 else 0
+            cluster_threshold = Z[-(n_clusters - 1), 2] if n_clusters > 1 else 0
             dendrogram(Z, labels=df["ticker"].tolist(), color_threshold=cluster_threshold)
 
             # Add matplotlib adjustments: remove y-axis numbers, add x-axis label and title
